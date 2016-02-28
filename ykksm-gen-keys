@@ -37,7 +37,7 @@ use POSIX qw(strftime);
 my $device = "/dev/random";
 
 sub usage {
-    print "Usage: ykksm-gen-keys [--verbose] [--help] [--urandom] [--progflags PROGFLAGS] [--pskc] [--nolockpw] [--database DBI] [--db-user USER] [--db-passwd PASSWD] START [END]\n";
+    print "Usage: ykksm-gen-keys [--verbose] [--help] [--urandom] [--progflags PROGFLAGS] [--pskc] [--nolockpw] [--pub-prefix PREFIX] [--database DBI] [--db-user USER] [--db-passwd PASSWD] START [END]\n";
     print "\n";
     print "Tool to generate keys on the YKKSM-KEYPROV format.\n";
     print "The KSM database can also be populated with this tool.\n";
@@ -62,6 +62,9 @@ sub usage {
     print "  --db-passwd PASSWD: Database password to use, defaults to empty string.\n";
     print "\n";
     print "  --no-lockpw: Use a lockpw of all zeros (no lockpw)\n";
+    print "\n";
+    print "  --pub-prefix PREFIX: A modhex prefix to prepend to the public ID string.\n";
+    print "    This MUST be a modhex string of 2-20 characters.\n";
     print "\n";
     print "Usage example:\n";
     print "\n";
@@ -112,6 +115,7 @@ my $progflags;
 my $start = "";
 my $end = "";
 my $nolockpw = "";
+my $pubprefix = "";
 
 
 # Yanked from ykksm-import
@@ -145,6 +149,8 @@ while (defined($ARGV[0])) {
         $dbpass = shift;
     } elsif ($cmd eq "--nolockpw") {
         $nolockpw = 1;
+    } elsif ($cmd eq "--pub-prefix") {
+        $pubprefix = shift;
     } elsif ($cmd =~ m/^[0-9]+/) {
 	if ($start eq "") {
 	    $start = $cmd;
@@ -228,6 +234,14 @@ while ($ctr <= $end) {
     
     $lockpw = gethexrand(6) unless ($nolockpw);
 
+    # use a public id prefix if provided
+    my $pubprefixbytes = length($pubprefix);
+    if ($pubprefixbytes > 0) {
+        die "Public prefix is longer than 20 characters" if ($pubprefixbytes > 20);
+        die "Public prefix is an odd number of characters" if ($pubprefixbytes % 2);
+        $modhexctr = $pubprefix . $modhexctr;
+    }
+        
     if ($db) {
         $inserth->execute($creator, $now, $ctr,
                           $modhexctr, $internaluid,
