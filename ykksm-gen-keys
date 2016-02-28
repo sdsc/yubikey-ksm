@@ -188,10 +188,10 @@ if ($db) {
         if ($row[0] >= 0 && $row[1] > 0) {
             $start = $row[0] + 1;
 
-            # end is a counter in this case, remember?
-            $end-- if ($end > 0);
-            $end = $start + $end;
         }
+        # end is a counter in this case, remember?
+        $end-- if ($end > 0);
+        $end = $start + $end;
     }
 
     # and get ready to insert stuff
