@@ -64,7 +64,8 @@ sub usage {
     print "  --no-lockpw: Use a lockpw of all zeros (no lockpw)\n";
     print "\n";
     print "  --pub-prefix PREFIX: A modhex prefix to prepend to the public ID string.\n";
-    print "    This MUST be a modhex string of 2-20 characters.\n";
+    print "    This MUST be a modhex string.\n";
+    print "    Note that this prefix + serial number must be 16 or less characters long.\n";
     print "\n";
     print "Usage example:\n";
     print "\n";
@@ -239,9 +240,10 @@ while ($ctr <= $end) {
     # use a public id prefix if provided
     my $pubprefixbytes = length($pubprefix);
     if ($pubprefixbytes > 0) {
-        die "Public prefix is longer than 20 characters" if ($pubprefixbytes > 20);
+        my $rembytes = 16 - $pubprefixbytes;
+        die "Public prefix is longer than 14 characters" if ($pubprefixbytes > 14);
         die "Public prefix is an odd number of characters" if ($pubprefixbytes % 2);
-        $modhexctr = $pubprefix . $modhexctr;
+        $modhexctr = $pubprefix . hex2modhex(sprintf("%0" . $rembytes . "x", $ctr));
     }
         
     if ($db) {
