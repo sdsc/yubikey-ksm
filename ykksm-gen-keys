@@ -31,23 +31,35 @@
 use strict;
 use POSIX qw(strftime);
 use MIME::Base64;
+use DBI;
+use POSIX qw(strftime);
 
 my $device = "/dev/random";
 
 sub usage {
-    print "Usage: ykksm-gen-keys [--verbose] [--help] [--urandom] [--progflags PROGFLAGS] [--pskc] START [END]\n";
+    print "Usage: ykksm-gen-keys [--verbose] [--help] [--urandom] [--progflags PROGFLAGS] [--pskc] [--database DBI] [--db-user USER] [--db-passwd PASSWD] START [END]\n";
     print "\n";
     print "Tool to generate keys on the YKKSM-KEYPROV format.\n";
+    print "The KSM database can also be populated with this tool.\n";
     print "\n";
     print "START: Decimal start point.\n";
+    print "  If --database is used, set to 0 to start at the next available serial number.\n";
     print "\n";
     print "END:   Decimal end point, if absent START is used as END.\n";
+    print "  If --database is used and START is set to 0, set this to the COUNT of\n";
+    print "  keys to generate (defaults to 1)\n";
     print "\n";
     print "  --urandom:   Use /dev/urandom instead of /dev/random as entropy source.\n";
     print "\n";
     print "  --progflags PROGFLAGS: Add a final personalization configuration string.\n";
     print "\n";
     print "  --pskc: Output keys on the YubiKey PSKC format.\n";
+    print "\n";
+    print "  --database DBI: Database identifier to insert keys to\n";
+    print "\n";
+    print "  --db-user USER: Database username to use, defaults to empty string.\n";
+    print "\n";
+    print "  --db-passwd PASSWD: Database password to use, defaults to empty string.\n";
     print "\n";
     print "Usage example:\n";
     print "\n";
@@ -97,6 +109,19 @@ my $pskc = 0;
 my $progflags;
 my $start = "";
 my $end = "";
+
+
+# Yanked from ykksm-import
+our ($dbuser, $dbpass, $basepath, $dbname, $dbserver, $dbport, $dbtype);
+if( -r '/etc/yubico/ksm/config-db.cfg' ) {
+    require '/etc/yubico/ksm/config-db.cfg';
+} else {
+    $dbtype = 'mysql';
+    $dbname = 'ykksm';
+}
+
+my $db = "dbi:$dbtype:$dbname";
+
 while (defined($ARGV[0])) {
     my $cmd = shift @ARGV;
     if (($cmd eq "-v") || ($cmd eq "--verbose")) {
@@ -109,6 +134,12 @@ while (defined($ARGV[0])) {
 	$progflags = "," . shift;
     } elsif ($cmd eq "--pskc") {
 	$pskc = 1;
+    } elsif ($cmd eq "--database") {
+        $db = shift;
+    } elsif ($cmd eq "--db-user") {
+        $dbuser = shift;
+    } elsif ($cmd eq "--db-passwd") {
+        $dbpass = shift;
     } elsif ($cmd =~ m/^[0-9]+/) {
 	if ($start eq "") {
 	    $start = $cmd;
@@ -127,6 +158,45 @@ if ($pskc) {
     $now .= 'Z';
 }
 my $ctr;
+my $inserth;
+my $dbh;
+my $creator;
+# Connect to the DB and prepare to do stuff
+if ($db) {
+    $dbh = DBI->connect($db, $dbuser, $dbpass, {'RaiseError' => 1});
+    die "Unable to connect to database" unless $dbh;
+    die "Unable to connect to database: " . $dbh->errstr if $dbh->err;
+    
+    # because some things might fail, we don't want the db in 
+    # an inconsistent state.
+    $dbh->begin_work;
+
+    # pick the next available serial, if directed to.
+    if ($start == 0) {
+        my @row = $dbh->selectrow_array("SELECT max(serialnr), count(*) from yubikeys");
+        print "Counter is at $row[0] nrows $row[1]\n";
+        if ($row[0] >= 0 && $row[1] > 0) {
+            $start = $row[0] + 1;
+            $end = $start + $end; # end is a counter in this case, remember?
+        }
+    }
+
+    # and get ready to insert stuff
+    $inserth = $dbh->prepare_cached(qq{
+    INSERT INTO yubikeys (creator, created, serialnr,
+        publicname, internalname, aeskey, lockcode)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    });
+
+    # we'll want to record the account running this program for records
+    if (exists $ENV{'SUDO_USER'}){
+        $creator = $ENV{'SUDO_USER'};
+    } else {
+        $creator = `id -nu`;
+        chomp $creator;
+    }
+
+}
 
 if ($pskc) {
     print "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
@@ -150,6 +220,13 @@ while ($ctr <= $end) {
     my $internaluid = gethexrand(6);
     my $aeskey = $pskc ? getb64rand(16) : gethexrand(16);
     my $lockpw = gethexrand(6);
+
+    if ($db) {
+        $inserth->execute($creator, $now, $ctr,
+                          $modhexctr, $internaluid,
+                          $aeskey, $lockpw)
+            or die "Database insert error: " . $dbh->errstr;
+    }
 
     if ($pskc) {
 	print "     <KeyPackage>\n";
@@ -183,6 +260,10 @@ while ($ctr <= $end) {
     }
 
     $ctr++;
+}
+
+if ($db) {
+    $dbh->commit;
 }
 
 if ($pskc) {
