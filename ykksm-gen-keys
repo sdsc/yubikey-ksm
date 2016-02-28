@@ -185,10 +185,12 @@ if ($db) {
     # pick the next available serial, if directed to.
     if ($start == 0) {
         my @row = $dbh->selectrow_array("SELECT max(serialnr), count(*) from yubikeys");
-        print "Counter is at $row[0] nrows $row[1]\n";
         if ($row[0] >= 0 && $row[1] > 0) {
             $start = $row[0] + 1;
-            $end = $start + $end; # end is a counter in this case, remember?
+
+            # end is a counter in this case, remember?
+            $end-- if ($end > 0);
+            $end = $start + $end;
         }
     }
 
