@@ -37,7 +37,7 @@ use POSIX qw(strftime);
 my $device = "/dev/random";
 
 sub usage {
-    print "Usage: ykksm-gen-keys [--verbose] [--help] [--urandom] [--progflags PROGFLAGS] [--pskc] [--database DBI] [--db-user USER] [--db-passwd PASSWD] START [END]\n";
+    print "Usage: ykksm-gen-keys [--verbose] [--help] [--urandom] [--progflags PROGFLAGS] [--pskc] [--nolockpw] [--database DBI] [--db-user USER] [--db-passwd PASSWD] START [END]\n";
     print "\n";
     print "Tool to generate keys on the YKKSM-KEYPROV format.\n";
     print "The KSM database can also be populated with this tool.\n";
@@ -60,6 +60,8 @@ sub usage {
     print "  --db-user USER: Database username to use, defaults to empty string.\n";
     print "\n";
     print "  --db-passwd PASSWD: Database password to use, defaults to empty string.\n";
+    print "\n";
+    print "  --no-lockpw: Use a lockpw of all zeros (no lockpw)\n";
     print "\n";
     print "Usage example:\n";
     print "\n";
@@ -109,6 +111,7 @@ my $pskc = 0;
 my $progflags;
 my $start = "";
 my $end = "";
+my $nolockpw = "";
 
 
 # Yanked from ykksm-import
@@ -140,6 +143,8 @@ while (defined($ARGV[0])) {
         $dbuser = shift;
     } elsif ($cmd eq "--db-passwd") {
         $dbpass = shift;
+    } elsif ($cmd eq "--nolockpw") {
+        $nolockpw = 1;
     } elsif ($cmd =~ m/^[0-9]+/) {
 	if ($start eq "") {
 	    $start = $cmd;
@@ -219,7 +224,9 @@ while ($ctr <= $end) {
     my $modhexctr = hex2modhex($hexctr);
     my $internaluid = gethexrand(6);
     my $aeskey = $pskc ? getb64rand(16) : gethexrand(16);
-    my $lockpw = gethexrand(6);
+    my $lockpw = "000000000000";
+    
+    $lockpw = gethexrand(6) unless ($nolockpw);
 
     if ($db) {
         $inserth->execute($creator, $now, $ctr,
